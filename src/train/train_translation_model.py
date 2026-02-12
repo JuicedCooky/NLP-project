@@ -2,10 +2,11 @@ from src.data.dataset import get_dataloader
 from transformers import MarianConfig, MarianMTModel
 import sentencepiece as spm
 import torch 
+from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-dataloader, tokenizer = get_dataloader()
+dataloader, tokenizer = get_dataloader(batch_size=8)
 
 #Loading config file to train translation model
 config = MarianConfig(
@@ -23,19 +24,56 @@ config = MarianConfig(
 model = MarianMTModel(config)
 model.to(device)
 
-print(f"Parameters: {model.num_parameters()}")
+model.resize_token_embeddings(len(tokenizer))
 
-epochs = 1
+print(f"Parameters: {model.num_parameters()}")
+epochs = 4
 
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
+model.config.pad_token_id = 0
+model.config.decoder_start_token_id = 1
+model.config.eos_token_id = 2
+model.config.unk_token_id = 2
+
+model.generation_config.pad_token_id = 0
+model.generation_config.decoder_start_token_id = 1
+model.generation_config.eos_token_id = 2
+model.generation_config.unk_token_id = 2
+
 model.train()
 for epoch in range(1, epochs+1):
-    print(f"epoch:{epoch}")   
-    for batch_idx, batch in enumerate(dataloader):
-        # input_batch = {k: v.to(device) for k,v in batch['input_ids'].item()}
-        print(f"input_ids: {batch['input_ids']}")
-        print(f"target_ids: {batch['target_ids']}")
-        print(f"attention_mask: {batch['attention_mask']}")
-        # print(batch.keys())
+    print(f"Epoch: {epoch}")   
+
+    batch_loss = 0.0
+    batch_index = 0
+
+    loop = tqdm(dataloader, leave=True)
+    for batch in loop:
+        batch = {k: v.to(device) for k,v in batch.items()}
+        # model.cpu()
+
+        outputs = model(
+            input_ids=batch['input_ids'],
+            attention_mask=batch['attention_mask'],
+            labels=batch['target_ids']
+            )
+        loss = outputs.loss
+        batch_loss += loss
+
+        optimizer.zero_grad()
+
+        loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+
+        batch_index+=1
+    print(f"Batch loss: {batch_loss/batch_index}")
+
+print(f"Saving model...")
+model_save_path="ckpt/test_model" 
+model.save_pretrained("ckpt/test_model")
+print(f"Saved model to {model_save_path}")
+
     

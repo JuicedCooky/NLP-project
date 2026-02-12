@@ -5,3 +5,4 @@ src/tokenizer/marian/
 src/tokenizer/train.all.txt
 src/tokenizer/train.all.tokenized.txt
 **/__pycache__
+ckpt/
