@@ -4,12 +4,12 @@ import sentencepiece as spm
 from torch.utils.data import DataLoader
 
 
-def load_translation_dataset(data_path="data/finetranslations/data/jpn_Jpan/*.parquet", num_files=1):
+def load_translation_dataset(data_path="data/finetranslations/data/jpn_Jpan/*.parquet", num_files=1, split="train"):
     """Load translation dataset from parquet files."""
     dataset_files = glob.glob(data_path)
     limited_files = dataset_files[:num_files]
 
-    dataset = load_dataset("parquet", data_files=limited_files, split="train")
+    dataset = load_dataset("parquet", data_files=limited_files, split=split)
     keys_to_remove = [key for key in dataset[0].keys() if key != "og_full_text" and key != "translated_text"]
     dataset = dataset.remove_columns(keys_to_remove)
 
@@ -54,6 +54,7 @@ def get_dataloader(
     batch_size=32,
     shuffle=True,
     subset_ratio=500,
+    split="train",
 ):
     """Create a DataLoader for the translation dataset.
 
@@ -69,7 +70,7 @@ def get_dataloader(
         DataLoader and tokenizer
     """
     tokenizer = spm.SentencePieceProcessor(model_file=tokenizer_path)
-    dataset = load_translation_dataset(data_path)
+    dataset = load_translation_dataset(data_path, split=split)
 
     # Use subset for faster iteration
     if subset_ratio > 1:
