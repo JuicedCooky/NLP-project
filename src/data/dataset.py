@@ -21,15 +21,21 @@ def tokenize_batch(batch, tokenizer, max_length=128):
     pad_id = tokenizer.pad_id()
     input_list = []
     output_list = []
+    attention_mask_list = []
 
     for i in range(len(batch["og_full_text"])):
         input_tokens = tokenizer.encode(batch["og_full_text"][i])
         output_tokens = tokenizer.encode(batch["translated_text"][i])
-
+        mask = []
         # Pad or truncate input
-        if len(input_tokens) < max_length:
-            input_tokens = input_tokens + [pad_id] * (max_length - len(input_tokens))
+        
+        input_len = len(input_tokens)
+
+        if input_len < max_length:
+            mask = [1] * input_len + [0] * (max_length - input_len)
+            input_tokens = input_tokens + [pad_id] * (max_length - input_len)
         else:
+            mask = [1] * max_length
             input_tokens = input_tokens[:max_length]
 
         # Pad or truncate output
@@ -40,10 +46,13 @@ def tokenize_batch(batch, tokenizer, max_length=128):
 
         input_list.append(input_tokens)
         output_list.append(output_tokens)
+        attention_mask_list.append(mask)
+        
 
     return {
         "input_ids": input_list,
         "target_ids": output_list,
+        "attention_mask": attention_mask_list
     }
 
 
@@ -80,9 +89,10 @@ def get_dataloader(
     dataset = dataset.map(
         lambda batch: tokenize_batch(batch, tokenizer, max_length),
         batched=True,
-        remove_columns=["og_full_text", "translated_text"]
+        remove_columns=["og_full_text", "translated_text"],
+        load_from_cache_file=False
     )
-    dataset.set_format(type="torch", columns=['input_ids', 'target_ids'])
+    dataset.set_format(type="torch", columns=['input_ids', 'target_ids', 'attention_mask'])
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
