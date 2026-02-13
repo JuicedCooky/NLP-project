@@ -5,10 +5,12 @@ import torch
 from tqdm import tqdm
 from src.evaluation.eval_metrics import evaluate_model
 
+saved_model_path = "./ckpt/test_model"
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # dataloader, tokenizer = get_dataloader(batch_size=8,subset_ratio=250)
-dataloaders, tokenizer = get_dataloader_splits(batch_size=8,subset_ratio=250)
+dataloaders, tokenizer = get_dataloader_splits(batch_size=8,subset_ratio=50)
 
 #Loading config file to train translation model
 config = MarianConfig(
@@ -23,13 +25,17 @@ config = MarianConfig(
     bos_token_id=tokenizer.bos_id(),
 )
 
-model = MarianMTModel(config)
+if saved_model_path is not None:
+    model = MarianMTModel.from_pretrained(saved_model_path)
+else:
+    model = MarianMTModel(config)
+
 model.to(device)
 
 model.resize_token_embeddings(len(tokenizer))
 
 print(f"Parameters: {model.num_parameters()}")
-epochs = 4
+epochs = 1
 
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 

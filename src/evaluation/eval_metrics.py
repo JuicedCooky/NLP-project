@@ -22,6 +22,9 @@ def evaluate_model(model, tokenizer, dataloader, device):
                 attention_mask = batch['attention_mask'].to(device),
                 max_new_tokens=128, 
                 num_beams=4,
+                repetition_penalty=2.5,
+                no_repeat_ngram_size=2,
+                early_stopping=True
             )
             generated_lists = generated.tolist()
 
