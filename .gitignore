@@ -5,3 +5,4 @@ src/tokenizer/
 **/__pycache__/
 ckpt/
 __pycache__/
+src/data/jp_eng/
