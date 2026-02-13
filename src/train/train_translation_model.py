@@ -1,90 +1,95 @@
-from src.data.dataset import get_dataloader, get_dataloader_splits
-from transformers import MarianConfig, MarianMTModel
+from src.data.eng_jav.nusax_mt_eng_jav import get_dataloader_splits
+from transformers import AutoTokenizer, MarianConfig, MarianMTModel
 import sentencepiece as spm
 import torch 
 from tqdm import tqdm
 from src.evaluation.eval_metrics import evaluate_model
+import argparse
 
-saved_model_path = "./ckpt/test_model"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    
+    #Model Loading and Setup
+    parser.add_argument("--forward-model-path", type=str)
+    parser.add_argument("--backward-model-path", type=str)
 
-# dataloader, tokenizer = get_dataloader(batch_size=8,subset_ratio=250)
-dataloaders, tokenizer = get_dataloader_splits(batch_size=8,subset_ratio=50)
+    args = parser.parse_args()
 
-#Loading config file to train translation model
-config = MarianConfig(
-    vocab_size=32000,
-    d_model=512,             
-    encoder_layers=6,
-    decoder_layers=6,
-    encoder_attention_heads=8,
-    decoder_attention_heads=8,
-    pad_token_id=tokenizer.pad_id(),
-    eos_token_id=tokenizer.eos_id(),
-    bos_token_id=tokenizer.bos_id(),
-)
+    saved_model_path = "./ckpt/test_model"
 
-if saved_model_path is not None:
-    model = MarianMTModel.from_pretrained(saved_model_path)
-else:
-    model = MarianMTModel(config)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model.to(device)
+    dataloaders, tokenizer = get_dataloader_splits(batch_size=8)
+    train_dataloader = dataloaders["train"]
+    test_dataloader = dataloaders["test"]
+    val_dataloader = dataloaders["validation"]
 
-model.resize_token_embeddings(len(tokenizer))
+    forward_checkpoint = "Helsinki-NLP/opus-mt-id-en"
+    backward_checkpoint = "Helsinki-NLP/opus-mt-en-id"
 
-print(f"Parameters: {model.num_parameters()}")
-epochs = 1
+    if args.forward_model_path is not None:
+        forward_model = MarianMTModel.from_pretrained(args.forward_model_path)
+    else:
+        forward_model = MarianMTModel.from_pretrained(forward_checkpoint)
+    if args.backward_model_path is not None:
+        backward_model = MarianMTModel.from_pretrained(args.backward_model_path)
+    else:
+        backward_model = MarianMTModel.from_pretrained(backward_checkpoint)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
-model.config.pad_token_id = 0
-model.config.decoder_start_token_id = 1
-model.config.eos_token_id = 2
-model.config.unk_token_id = 2
+    tokenizer = AutoTokenizer.from_pretrained(forward_checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(backward_checkpoint)
 
-model.generation_config.pad_token_id = 0
-model.generation_config.decoder_start_token_id = 1
-model.generation_config.eos_token_id = 2
-model.generation_config.unk_token_id = 2
+    forward_model.to(device)
+    backward_model.to(device)
 
-for epoch in range(1, epochs+1):
-    model.train()
-    print(f"Epoch: {epoch}")   
+    forward_model.resize_token_embeddings(len(tokenizer))
 
-    batch_loss = 0.0
-    batch_index = 0
+    print(f"Parameters: {forward_model.num_parameters()}")
+    epochs = 5
 
-    loop = tqdm(dataloaders["train"], leave=True)
-    for batch in loop:
-        batch = {k: v.to(device) for k,v in batch.items()}
-        # model.cpu()
+    optimizer = torch.optim.Adam(forward_model.parameters(), lr=1e-4)
+    
+    for epoch in range(1, epochs+1):
+        forward_model.train()
+        print(f"Epoch: {epoch}")   
 
-        outputs = model(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
-            labels=batch['target_ids']
-            )
-        # print(batch['input_ids'][0])
-        # print(batch['target_ids'][0])
-        loss = outputs.loss
-        batch_loss += loss
+        batch_loss = 0.0
+        batch_index = 0
 
-        optimizer.zero_grad()
+        loop = tqdm(train_dataloader, leave=True)
+        for batch in loop:
+            batch = {k: v.to(device) for k, v in batch.items()}
+            # batch = {k: v.to(device) for k,v in batch.items()}
+            # forward_model.cpu()
+            # print(f"batch: {batch}")
+            # print(f"batch keys: {batch.keys()}")
 
-        loss.backward()
+            outputs = forward_model(
+                input_ids=batch['input_ids'],
+                attention_mask=batch['attention_mask'],
+                labels=batch['labels']
+                )
+            # print(batch['input_ids'][0])
+            # print(batch['target_ids'][0])
+            loss = outputs.loss
+            batch_loss += loss
 
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+            optimizer.zero_grad()
 
-        batch_index+=1
-    evaluate_model(model, tokenizer, dataloaders['test'], device)
-    print(f"Batch loss: {batch_loss/batch_index}")
+            loss.backward()
 
-print(f"Saving model...")
-model_save_path="ckpt/test_model" 
-model.save_pretrained("ckpt/test_model")
-print(f"Saved model to {model_save_path}")
+            torch.nn.utils.clip_grad_norm_(forward_model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            batch_index+=1
+        evaluate_model(forward_model, tokenizer, test_dataloader, device)
+        print(f"Batch loss: {batch_loss/batch_index}")
+
+    print(f"Saving forward_model...")
+    model_save_path="ckpt/test_model" 
+    forward_model.save_pretrained("ckpt/test_model")
+    print(f"Saved forward_model to {model_save_path}")
 
     

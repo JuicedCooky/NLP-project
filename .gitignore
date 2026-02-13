@@ -1,8 +1,7 @@
 /test_env/
 /data/finetranslations/
 .python-version
-src/tokenizer/marian/
-src/tokenizer/train.all.txt
-src/tokenizer/train.all.tokenized.txt
-**/__pycache__
+src/tokenizer/
+**/__pycache__/
 ckpt/
+__pycache__/
