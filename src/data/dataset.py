@@ -19,16 +19,18 @@ def load_translation_dataset(data_path="data/finetranslations/data/jpn_Jpan/*.pa
 def tokenize_batch(batch, tokenizer, max_length=128):
     """Tokenize a batch of translation pairs."""
     pad_id = tokenizer.pad_id()
+    eos_id = tokenizer.eos_id()
+    bos_id = tokenizer.bos_id()
     input_list = []
     output_list = []
     attention_mask_list = []
 
     for i in range(len(batch["og_full_text"])):
-        input_tokens = tokenizer.encode(batch["og_full_text"][i])
-        output_tokens = tokenizer.encode(batch["translated_text"][i])
+        input_tokens = [bos_id] + tokenizer.encode(batch["og_full_text"][i]) + [eos_id]
+        output_tokens = [bos_id] + tokenizer.encode(batch["translated_text"][i]) + [eos_id]
         mask = []
         # Pad or truncate input
-        
+
         input_len = len(input_tokens)
 
         if input_len < max_length:
@@ -36,13 +38,13 @@ def tokenize_batch(batch, tokenizer, max_length=128):
             input_tokens = input_tokens + [pad_id] * (max_length - input_len)
         else:
             mask = [1] * max_length
-            input_tokens = input_tokens[:max_length]
+            input_tokens = input_tokens[:max_length-1] + [eos_id]
 
         # Pad or truncate output
         if len(output_tokens) < max_length:
             output_tokens = output_tokens + [pad_id] * (max_length - len(output_tokens))
         else:
-            output_tokens = output_tokens[:max_length]
+            output_tokens = output_tokens[:max_length-1] + [eos_id]
 
         input_list.append(input_tokens)
         output_list.append(output_tokens)
@@ -90,13 +92,70 @@ def get_dataloader(
         lambda batch: tokenize_batch(batch, tokenizer, max_length),
         batched=True,
         remove_columns=["og_full_text", "translated_text"],
-        load_from_cache_file=False
     )
     dataset.set_format(type="torch", columns=['input_ids', 'target_ids', 'attention_mask'])
 
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
     return dataloader, tokenizer
+
+def get_dataloader_splits(
+    tokenizer_path="./src/tokenizer/marian/jp_en_tokenizer.model",
+    data_path="data/finetranslations/data/jpn_Jpan/*.parquet",
+    max_length=128,
+    batch_size=32,
+    shuffle=True,
+    subset_ratio=500,
+    split="train",
+    train_ratio=0.8,
+    val_ratio=0.1,
+    test_ratio=0.1,
+    seed=21,
+):
+    """Create a DataLoader for the translation dataset.
+
+    Args:
+        tokenizer_path: Path to the SentencePiece model file
+        data_path: Glob pattern for parquet data files
+        max_length: Maximum sequence length for tokenization
+        batch_size: Batch size for DataLoader
+        shuffle: Whether to shuffle the data
+        subset_ratio: Use 1/subset_ratio of the dataset (for testing)
+
+    Returns:
+        DataLoader and tokenizer
+    """
+    assert (train_ratio+test_ratio+val_ratio) == 1, f"Ratios must be equal to 1.0 {train_ratio+test_ratio+val_ratio}"
+
+    tokenizer = spm.SentencePieceProcessor(model_file=tokenizer_path)
+    dataset = load_translation_dataset(data_path, split=split)
+
+    # Use subset for faster iteration
+    if subset_ratio > 1:
+        dataset = dataset.select(range(len(dataset) // subset_ratio))
+
+    # Tokenize
+    dataset = dataset.map(
+        lambda batch: tokenize_batch(batch, tokenizer, max_length),
+        batched=True,
+        remove_columns=["og_full_text", "translated_text"],
+    )
+    dataset.set_format(type="torch", columns=['input_ids', 'target_ids', 'attention_mask'])
+
+    # test_size = test_ratio 
+    train_val_test = dataset.train_test_split(test_size=test_ratio ,seed=seed)
+    train_val = dataset.train_test_split(test_size=(val_ratio/(val_ratio+train_ratio)) ,seed=seed)
+
+    splits = {
+        "train": train_val['train'],
+        "val": train_val['test'],
+        "test": train_val_test['test'],
+    }
+    dataloaders = {}
+    for name, split in splits.items():
+        dataloaders[name] = DataLoader(split, batch_size=batch_size, shuffle=shuffle)
+
+    return dataloaders, tokenizer
 
 
 if __name__ == "__main__":

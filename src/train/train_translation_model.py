@@ -1,12 +1,14 @@
-from src.data.dataset import get_dataloader
+from src.data.dataset import get_dataloader, get_dataloader_splits
 from transformers import MarianConfig, MarianMTModel
 import sentencepiece as spm
 import torch 
 from tqdm import tqdm
+from src.evaluation.eval_metrics import evaluate_model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-dataloader, tokenizer = get_dataloader(batch_size=8)
+# dataloader, tokenizer = get_dataloader(batch_size=8,subset_ratio=250)
+dataloaders, tokenizer = get_dataloader_splits(batch_size=8,subset_ratio=250)
 
 #Loading config file to train translation model
 config = MarianConfig(
@@ -41,14 +43,14 @@ model.generation_config.decoder_start_token_id = 1
 model.generation_config.eos_token_id = 2
 model.generation_config.unk_token_id = 2
 
-model.train()
 for epoch in range(1, epochs+1):
+    model.train()
     print(f"Epoch: {epoch}")   
 
     batch_loss = 0.0
     batch_index = 0
 
-    loop = tqdm(dataloader, leave=True)
+    loop = tqdm(dataloaders["train"], leave=True)
     for batch in loop:
         batch = {k: v.to(device) for k,v in batch.items()}
         # model.cpu()
@@ -58,6 +60,8 @@ for epoch in range(1, epochs+1):
             attention_mask=batch['attention_mask'],
             labels=batch['target_ids']
             )
+        # print(batch['input_ids'][0])
+        # print(batch['target_ids'][0])
         loss = outputs.loss
         batch_loss += loss
 
@@ -69,6 +73,7 @@ for epoch in range(1, epochs+1):
         optimizer.step()
 
         batch_index+=1
+    evaluate_model(model, tokenizer, dataloaders['test'], device)
     print(f"Batch loss: {batch_loss/batch_index}")
 
 print(f"Saving model...")
