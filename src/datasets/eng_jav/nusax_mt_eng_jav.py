@@ -85,4 +85,5 @@ if __name__ == "__main__":
             print(f"  Labels shape: {batch['labels'].shape}")
             print(f"  Sample input: {tokenizer.decode(batch['input_ids'][0].tolist())}")
             print(f"  Sample target: {tokenizer.decode(batch['labels'][0].tolist())}")
+            print(f"  Attention mask: {(batch['attention_mask'][0].tolist())}")
             break

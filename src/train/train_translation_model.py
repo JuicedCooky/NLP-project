@@ -1,4 +1,4 @@
-from src.data.eng_jav.nusax_mt_eng_jav import get_dataloader_splits
+from src.datasets.eng_jav.nusax_mt_eng_jav import get_dataloader_splits
 from transformers import AutoTokenizer, MarianConfig, MarianMTModel
 import sentencepiece as spm
 import torch 
@@ -11,8 +11,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     #Model Loading and Setup
-    parser.add_argument("--forward-model-path", type=str)
-    parser.add_argument("--backward-model-path", type=str)
+    parser.add_argument("--main-model-path", type=str)
+    parser.add_argument("--reverse-model-path", type=str)
 
     args = parser.parse_args()
 
@@ -25,34 +25,34 @@ if __name__ == "__main__":
     test_dataloader = dataloaders["test"]
     val_dataloader = dataloaders["validation"]
 
-    forward_checkpoint = "Helsinki-NLP/opus-mt-id-en"
-    backward_checkpoint = "Helsinki-NLP/opus-mt-en-id"
+    main_checkpoint = "Helsinki-NLP/opus-mt-id-en"
+    reverse_checkpoint = "Helsinki-NLP/opus-mt-en-id"
 
-    if args.forward_model_path is not None:
-        forward_model = MarianMTModel.from_pretrained(args.forward_model_path)
+    if args.main_model_path is not None:
+        main_model = MarianMTModel.from_pretrained(args.main_model_path)
     else:
-        forward_model = MarianMTModel.from_pretrained(forward_checkpoint)
-    if args.backward_model_path is not None:
-        backward_model = MarianMTModel.from_pretrained(args.backward_model_path)
+        main_model = MarianMTModel.from_pretrained(main_checkpoint)
+    if args.reverse_model_path is not None:
+        reverse_model = MarianMTModel.from_pretrained(args.reverse_model_path)
     else:
-        backward_model = MarianMTModel.from_pretrained(backward_checkpoint)
+        reverse_model = MarianMTModel.from_pretrained(reverse_checkpoint)
 
 
-    tokenizer = AutoTokenizer.from_pretrained(forward_checkpoint)
-    tokenizer = AutoTokenizer.from_pretrained(backward_checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(main_checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(reverse_checkpoint)
 
-    forward_model.to(device)
-    backward_model.to(device)
+    main_model.to(device)
+    reverse_model.to(device)
 
-    forward_model.resize_token_embeddings(len(tokenizer))
+    main_model.resize_token_embeddings(len(tokenizer))
 
-    print(f"Parameters: {forward_model.num_parameters()}")
+    print(f"Parameters: {main_model.num_parameters()}")
     epochs = 5
 
-    optimizer = torch.optim.Adam(forward_model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(main_model.parameters(), lr=1e-4)
     
     for epoch in range(1, epochs+1):
-        forward_model.train()
+        main_model.train()
         print(f"Epoch: {epoch}")   
 
         batch_loss = 0.0
@@ -62,11 +62,11 @@ if __name__ == "__main__":
         for batch in loop:
             batch = {k: v.to(device) for k, v in batch.items()}
             # batch = {k: v.to(device) for k,v in batch.items()}
-            # forward_model.cpu()
+            # main_model.cpu()
             # print(f"batch: {batch}")
             # print(f"batch keys: {batch.keys()}")
 
-            outputs = forward_model(
+            outputs = main_model(
                 input_ids=batch['input_ids'],
                 attention_mask=batch['attention_mask'],
                 labels=batch['labels']
@@ -78,18 +78,18 @@ if __name__ == "__main__":
 
             optimizer.zero_grad()
 
-            loss.backward()
+            loss.reverse()
 
-            torch.nn.utils.clip_grad_norm_(forward_model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(main_model.parameters(), max_norm=1.0)
             optimizer.step()
 
             batch_index+=1
-        evaluate_model(forward_model, tokenizer, test_dataloader, device)
+        evaluate_model(main_model, tokenizer, test_dataloader, device)
         print(f"Batch loss: {batch_loss/batch_index}")
 
-    print(f"Saving forward_model...")
+    print(f"Saving main_model...")
     model_save_path="ckpt/test_model" 
-    forward_model.save_pretrained("ckpt/test_model")
-    print(f"Saved forward_model to {model_save_path}")
+    main_model.save_pretrained("ckpt/test_model")
+    print(f"Saved main_model to {model_save_path}")
 
     
